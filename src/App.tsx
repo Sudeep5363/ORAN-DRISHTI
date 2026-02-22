@@ -106,6 +106,20 @@ function App() {
           >
             <FileCode size={16} /> Final Model Engine
           </a>
+           <a 
+            href="/oran_drishti_realtime/app.py" 
+            download 
+            className="flex items-center gap-2 px-4 py-2 bg-stone-800 hover:bg-stone-700 rounded-lg border border-stone-600 text-sm transition-colors"
+          >
+            <FileCode size={16} /> Realtime App
+          </a>
+           <a 
+            href="/oran_drishti_realtime/realtime_stac_fetcher.py" 
+            download 
+            className="flex items-center gap-2 px-4 py-2 bg-stone-800 hover:bg-stone-700 rounded-lg border border-stone-600 text-sm transition-colors"
+          >
+            <FileCode size={16} /> STAC Fetcher
+          </a>
         </div>
       </header>
 
