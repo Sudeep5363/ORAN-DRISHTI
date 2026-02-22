@@ -1,12 +1,15 @@
-import React, { useState, useRef } from 'react';
-import { loadGeoTiff, calculateDrift, detectAnomalies, renderToCanvas, RasterData } from './utils/geospatialEngine';
-import { Upload, Play, AlertTriangle, Download, FileCode } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { loadGeoTiff, calculateDrift, detectAnomalies, renderToCanvas, calculateSunPosition, validateShadowDepth, RasterData } from './utils/geospatialEngine';
+import { Upload, Play, AlertTriangle, Download, FileCode, MousePointerClick, Sun } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 function App() {
   const [pastFile, setPastFile] = useState<File | null>(null);
   const [presentFile, setPresentFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [resultReady, setResultReady] = useState(false);
+  const [selectedPixel, setSelectedPixel] = useState<{x: number, y: number} | null>(null);
+  const [solarData, setSolarData] = useState<{altitude: number, isConfirmed: boolean} | null>(null);
   
   const canvasPastRef = useRef<HTMLCanvasElement>(null);
   const canvasPresentRef = useRef<HTMLCanvasElement>(null);
@@ -46,6 +49,7 @@ function App() {
 
     setIsProcessing(true);
     setResultReady(false);
+    setSolarData(null);
     
     // Allow UI to update
     setTimeout(() => {
@@ -58,6 +62,14 @@ function App() {
         if (canvasResultRef.current) {
           renderToCanvas(presentRasterRef.current!, canvasResultRef.current, anomalies);
         }
+        
+        // Run Surya-Sakshi (Solar Validation)
+        // Simulate date (May 15th) and location (Aravallis)
+        const simDate = new Date('2025-05-15T12:00:00Z');
+        const altitude = calculateSunPosition(24.5, 73.0, simDate);
+        const isConfirmed = validateShadowDepth(altitude, stats.maxScore || 0.8);
+        setSolarData({ altitude, isConfirmed });
+
         setResultReady(true);
         
         if (count === 0) {
@@ -71,6 +83,34 @@ function App() {
         setIsProcessing(false);
       }
     }, 100);
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!resultReady || !canvasResultRef.current || !pastRasterRef.current || !presentRasterRef.current) return;
+
+    const rect = canvasResultRef.current.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) * (canvasResultRef.current.width / rect.width));
+    const y = Math.floor((e.clientY - rect.top) * (canvasResultRef.current.height / rect.height));
+
+    if (x >= 0 && x < pastRasterRef.current.width && y >= 0 && y < pastRasterRef.current.height) {
+      setSelectedPixel({ x, y });
+    }
+  };
+
+  const getChartData = () => {
+    if (!selectedPixel || !pastRasterRef.current || !presentRasterRef.current) return [];
+    
+    const idx = selectedPixel.y * pastRasterRef.current.width + selectedPixel.x;
+    const pastVal = pastRasterRef.current.data[idx];
+    const presentVal = presentRasterRef.current.data[idx];
+
+    // Simulate a time series for the chart since we only have two points
+    // We'll interpolate a simple trend
+    return [
+      { name: '2023 (Past)', ndvi: pastVal },
+      { name: '2024 (Inter)', ndvi: (pastVal + presentVal) / 2 }, // Interpolated
+      { name: '2025 (Present)', ndvi: presentVal },
+    ];
   };
 
   return (
@@ -213,36 +253,75 @@ function App() {
         </div>
 
         {/* Output Section */}
-        <div className="bg-stone-800 p-6 rounded-xl border border-stone-700 flex flex-col">
-          <h2 className="text-xl font-bold text-stone-300 mb-4 flex items-center gap-2">
-            <AlertTriangle size={20} className="text-red-500" /> Adharma Alert: Degradation Map
-          </h2>
+        <div className="bg-stone-800 p-6 rounded-xl border border-stone-700 flex flex-col space-y-6">
           
-          <div className="flex-1 bg-black rounded-lg overflow-hidden border border-stone-700 relative min-h-[400px]">
-            <canvas ref={canvasResultRef} className="w-full h-full object-contain" />
+          {/* Map */}
+          <div>
+            <h2 className="text-xl font-bold text-stone-300 mb-4 flex items-center gap-2">
+              <AlertTriangle size={20} className="text-red-500" /> Adharma Alert: Degradation Map
+            </h2>
             
-            {!resultReady && !isProcessing && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-stone-600">
-                <p>Waiting for analysis...</p>
-              </div>
-            )}
-            
-            {resultReady && (
-              <div className="absolute bottom-4 left-4 bg-stone-900/90 p-3 rounded border border-stone-600">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="w-3 h-3 bg-red-600 rounded-full animate-pulse"></span>
-                  <span className="text-xs text-stone-300">Anomalous Drift (Mining)</span>
+            <div className="bg-black rounded-lg overflow-hidden border border-stone-700 relative min-h-[400px]">
+              <canvas 
+                ref={canvasResultRef} 
+                onClick={handleCanvasClick}
+                className={`w-full h-full object-contain ${resultReady ? 'cursor-crosshair' : ''}`} 
+              />
+              
+              {!resultReady && !isProcessing && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-stone-600">
+                  <p>Waiting for analysis...</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 bg-green-900 rounded-full"></span>
-                  <span className="text-xs text-stone-300">Healthy Vegetation</span>
+              )}
+              
+              {resultReady && (
+                <div className="absolute bottom-4 left-4 bg-stone-900/90 p-3 rounded border border-stone-600 pointer-events-none">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="w-3 h-3 bg-red-600 rounded-full animate-pulse"></span>
+                    <span className="text-xs text-stone-300">Anomalous Drift (Mining)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 bg-green-900 rounded-full"></span>
+                    <span className="text-xs text-stone-300">Healthy Vegetation</span>
+                  </div>
+                  <div className="mt-2 text-[10px] text-stone-400 flex items-center gap-1">
+                    <MousePointerClick size={10} /> Click map to inspect pixel
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
+          {/* Pixel Analysis Chart */}
+          {resultReady && selectedPixel && (
+            <div className="bg-stone-900/50 p-4 rounded-lg border border-stone-600">
+              <h3 className="text-sm font-bold text-stone-300 mb-2 flex items-center gap-2">
+                Pixel Analysis (X: {selectedPixel.x}, Y: {selectedPixel.y})
+              </h3>
+              <div className="h-48 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={getChartData()}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#44403c" />
+                    <XAxis dataKey="name" stroke="#a8a29e" fontSize={12} />
+                    <YAxis stroke="#a8a29e" fontSize={12} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #44403c', color: '#fff' }}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="ndvi" 
+                      stroke="#10b981" 
+                      strokeWidth={2}
+                      dot={{ fill: '#10b981' }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
           {resultReady && (
-            <div className="mt-4 p-4 bg-red-900/20 border border-red-900/50 rounded-lg">
+            <div className="p-4 bg-red-900/20 border border-red-900/50 rounded-lg">
               <h4 className="font-bold text-red-400 mb-1">Analysis Complete</h4>
               <p className="text-sm text-red-200">
                 The highlighted red zones indicate statistical deviation in structural integrity, 

@@ -8,7 +8,28 @@ from trishul_ml_engine import apply_ritu_chakra_fft, build_and_train_shuddhi_lst
 
 # --- CONFIGURATION ---
 st.set_page_config(layout="wide", page_title="Oran-Drishti: Real-Time")
-ARAVALLI_BBOX = [73.7, 24.5, 73.8, 24.6] # Example Aravalli Coordinates
+ARAVALLI_BBOX = [72.5, 24.5, 72.6, 24.6] # Updated Aravalli Coordinates
+
+# --- HELPER FUNCTIONS ---
+def fetch_latest_aravalli_image():
+    """
+    Queries the STAC API for the latest Sentinel-2 L2A image covering the Aravalli region.
+    Returns the NDVI NumPy array and the acquisition date.
+    """
+    api = SentinelRealTimeAPI()
+    # Dynamic date range: Last 60 days to ensure recent data
+    end_date = datetime.datetime.now()
+    start_date = end_date - datetime.timedelta(days=60)
+    date_range = f"{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
+    
+    return api.get_sentinel2_data(ARAVALLI_BBOX, date_range)
+
+def fetch_baseline_image():
+    """
+    Queries the STAC API for a historical baseline image (e.g., 2 years ago).
+    """
+    api = SentinelRealTimeAPI()
+    return api.get_sentinel2_data(ARAVALLI_BBOX, "2023-01-01/2023-03-30")
 
 # --- HEADER ---
 st.title("🌿 Oran-Drishti: The Sacred Grove Sentinel")
@@ -32,23 +53,27 @@ if 'past_ndvi' not in st.session_state:
     st.session_state.past_ndvi = None
 if 'present_ndvi' not in st.session_state:
     st.session_state.present_ndvi = None
+if 'past_date' not in st.session_state:
+    st.session_state.past_date = None
+if 'present_date' not in st.session_state:
+    st.session_state.present_date = None
 
 # --- SECTION 2: LIVE TRIGGER ---
 if st.button("🚀 Ignite Divya-Drishti (Fetch Live Data & Analyze)", type="primary"):
-    
-    api = SentinelRealTimeAPI()
     
     # 1. Fetch Past Data (Baseline)
     with st.status("📡 Establishing Uplink to Sentinel-2 Constellation...", expanded=True) as status:
         
         st.write("⏳ Querying AWS Earth Search for Historical Baseline (2023)...")
-        past_ndvi, past_date = api.get_sentinel2_data(ARAVALLI_BBOX, "2023-01-01/2023-03-30")
+        past_ndvi, past_date = fetch_baseline_image()
         st.session_state.past_ndvi = past_ndvi
+        st.session_state.past_date = past_date
         st.write(f"✅ Acquired Baseline: {past_date}")
         
-        st.write("⏳ Querying Real-Time Feed for Current State (Last 30 Days)...")
-        present_ndvi, present_date = api.get_sentinel2_data(ARAVALLI_BBOX, "2025-01-01/2025-02-28") # Adjust date dynamically in real app
+        st.write("⏳ Querying Real-Time Feed for Current State (Last 60 Days)...")
+        present_ndvi, present_date = fetch_latest_aravalli_image()
         st.session_state.present_ndvi = present_ndvi
+        st.session_state.present_date = present_date
         st.write(f"✅ Acquired Real-Time: {present_date}")
         
         status.update(label="Data Acquisition Complete!", state="complete", expanded=False)
@@ -57,14 +82,14 @@ if st.button("🚀 Ignite Divya-Drishti (Fetch Live Data & Analyze)", type="prim
     with col1:
         fig, ax = plt.subplots()
         ax.imshow(st.session_state.past_ndvi, cmap='RdYlGn', vmin=-0.2, vmax=0.8)
-        ax.set_title(f"Purva-Sthiti (Past)\n{past_date}")
+        ax.set_title(f"Purva-Sthiti (Past)\n{st.session_state.past_date}")
         ax.axis('off')
         st.pyplot(fig)
         
     with col2:
         fig2, ax2 = plt.subplots()
         ax2.imshow(st.session_state.present_ndvi, cmap='RdYlGn', vmin=-0.2, vmax=0.8)
-        ax2.set_title(f"Vartaman-Sthiti (Live)\n{present_date}")
+        ax2.set_title(f"Vartaman-Sthiti (Live)\n{st.session_state.present_date}")
         ax2.axis('off')
         st.pyplot(fig2)
 

@@ -25,17 +25,47 @@ def generate_time_series_cube():
     timesteps, height, width = 36, 50, 50
     cube = np.zeros((timesteps, height, width), dtype=np.float32)
     
-    # Generate healthy Ritu-Chakra (Sine wave seasonality) for all pixels
     time = np.arange(timesteps)
-    seasonality = 0.5 * np.sin(2 * np.pi * time / 12) + 0.5 
     
+    # Simulate realistic phenology (Asymmetric Sine Wave + Baseline Variance)
+    # Peak in Monsoon (Month 7-9), Trough in Summer (Month 4-6)
+    # Formula: A * sin(wt + phi) + B
+    # We add a second harmonic to make it asymmetric (more realistic)
+    
+    base_seasonality = 0.3 * np.sin(2 * np.pi * time / 12 - np.pi/2) + \
+                       0.1 * np.sin(4 * np.pi * time / 12) + 0.5
+                       
+    # Generate spatial heterogeneity
     for y in range(height):
         for x in range(width):
-            cube[:, y, x] = seasonality + np.random.normal(0, 0.05, timesteps)
+            # Each pixel has a slightly different baseline (soil type, vegetation density)
+            pixel_baseline = np.random.normal(0, 0.05)
+            pixel_phase = np.random.normal(0, 0.2) # Slight shift in season start
             
-    # Inject "flatline" drift (mining) starting at month 15 in the center patch
-    for t in range(15, timesteps):
-        cube[t, 20:30, 20:30] = 0.1 + np.random.normal(0, 0.02)
+            # Apply phase shift
+            shifted_seasonality = 0.3 * np.sin(2 * np.pi * (time + pixel_phase) / 12 - np.pi/2) + \
+                                  0.1 * np.sin(4 * np.pi * (time + pixel_phase) / 12) + 0.5
+            
+            cube[:, y, x] = shifted_seasonality + pixel_baseline + np.random.normal(0, 0.03, timesteps)
+            
+    # Inject "Gradual Degradation" (Mining) starting at month 15 in the center patch
+    # Instead of instant flatline, it decays over 3-4 months
+    
+    mining_start = 15
+    mining_duration = 5
+    
+    for y in range(20, 30):
+        for x in range(20, 30):
+            for t in range(mining_start, timesteps):
+                if t < mining_start + mining_duration:
+                    # Linear decay
+                    decay_factor = (t - mining_start) / mining_duration
+                    target_val = 0.1 + np.random.normal(0, 0.02)
+                    current_val = cube[t, y, x]
+                    cube[t, y, x] = current_val * (1 - decay_factor) + target_val * decay_factor
+                else:
+                    # Flatline after full degradation
+                    cube[t, y, x] = 0.1 + np.random.normal(0, 0.02)
         
     np.save('data/synthetic_aravalli_data.npy', cube)
 
