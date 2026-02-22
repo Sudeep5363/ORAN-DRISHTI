@@ -93,7 +93,7 @@ st.markdown('<div class="section-header">🌍 LIVE SATELLITE IMAGERY</div>', uns
 fetch_col1, fetch_col2 = st.columns([1, 1])
 
 with fetch_col1:
-    fetch_button = st.button("🔄 Fetch Latest Image", use_container_width=True, key="fetch_btn")
+    fetch_button = st.button("🔄 Fetch Latest Image", width="stretch", key="fetch_btn")
 
 with fetch_col2:
     status_placeholder = st.empty()
@@ -115,7 +115,7 @@ if st.session_state.current_image is not None:
     st.image(
         cv2.cvtColor(st.session_state.current_image, cv2.COLOR_BGR2RGB),
         caption=f"Current Satellite Image ({st.session_state.last_fetch_time.strftime('%H:%M:%S UTC')})",
-        use_container_width=True
+        width="stretch"
     )
 else:
     st.info("💡 Click 'Fetch Latest Image' to load satellite data")
@@ -179,7 +179,7 @@ if st.session_state.current_image is not None and st.session_state.previous_imag
                 st.image(
                     cv2.cvtColor(diff_bgr, cv2.COLOR_BGR2RGB),
                     caption="Difference Map (White = Change)",
-                    use_container_width=True
+                    width="stretch"
                 )
             
             with vis_col2:
@@ -188,7 +188,7 @@ if st.session_state.current_image is not None and st.session_state.previous_imag
                     st.image(
                         cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB),
                         caption="Heat Map (Red = High Change)",
-                        use_container_width=True
+                        width="stretch"
                     )
             
             with st.expander("🔬 Technical Details"):

@@ -49,9 +49,29 @@ class ImageComparator:
 class AnomalyDetector:
     @staticmethod
     def detect_anomalies(diff_map, contamination=0.1):
-        flat = diff_map.flatten().reshape(-1, 1)
-        iso = IsolationForest(contamination=min(contamination, 0.5), random_state=42)
-        pred = iso.fit_predict(flat)
+        if diff_map is None:
+            return {'has_anomaly': False, 'threshold': 30, 'pixel_count': 0, 'mean_diff': 0.0, 'max_diff': 0.0, 'change_percentage': 0.0}
+
+        resized = cv2.resize(diff_map, (256, 256), interpolation=cv2.INTER_AREA)
+        flat = resized.flatten().astype(np.float32)
+
+        max_points = 4096
+        if flat.size > max_points:
+            rng = np.random.default_rng(42)
+            indices = rng.choice(flat.size, size=max_points, replace=False)
+            sample = flat[indices].reshape(-1, 1)
+        else:
+            sample = flat.reshape(-1, 1)
+
+        effective_contamination = max(0.001, min(float(contamination), 0.5))
+        iso = IsolationForest(
+            n_estimators=60,
+            max_samples=min(sample.shape[0], 1024),
+            contamination=effective_contamination,
+            random_state=42,
+            n_jobs=1
+        )
+        pred = iso.fit_predict(sample)
         has_anomaly = np.sum(pred == -1) > (len(pred) * 0.05)
         return {'has_anomaly': has_anomaly, 'threshold': 30, 'pixel_count': len(flat), 'mean_diff': np.mean(diff_map), 'max_diff': np.max(diff_map), 'change_percentage': ImageComparator.get_change_percentage(diff_map)}
 
