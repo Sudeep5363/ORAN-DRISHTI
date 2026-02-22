@@ -3,7 +3,6 @@
 import streamlit as st
 from datetime import datetime
 import numpy as np
-import cv2
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -113,7 +112,7 @@ if fetch_button or auto_refresh_enabled:
 
 if st.session_state.current_image is not None:
     st.image(
-        cv2.cvtColor(st.session_state.current_image, cv2.COLOR_BGR2RGB),
+        st.session_state.current_image,
         caption=f"Current Satellite Image ({st.session_state.last_fetch_time.strftime('%H:%M:%S UTC')})",
         width="stretch"
     )
@@ -175,9 +174,8 @@ if st.session_state.current_image is not None and st.session_state.previous_imag
             vis_col1, vis_col2 = st.columns(2)
             
             with vis_col1:
-                diff_bgr = cv2.cvtColor(difference_map, cv2.COLOR_GRAY2BGR)
                 st.image(
-                    cv2.cvtColor(diff_bgr, cv2.COLOR_BGR2RGB),
+                    difference_map,
                     caption="Difference Map (White = Change)",
                     width="stretch"
                 )
@@ -186,7 +184,7 @@ if st.session_state.current_image is not None and st.session_state.previous_imag
                 heatmap = ImageComparator.generate_heatmap(difference_map)
                 if heatmap is not None:
                     st.image(
-                        cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB),
+                        heatmap,
                         caption="Heat Map (Red = High Change)",
                         width="stretch"
                     )

@@ -1,4 +1,4 @@
-import streamlit as st, requests, cv2, numpy as np, datetime
+import streamlit as st, requests, numpy as np, datetime
 from PIL import Image
 from sklearn.ensemble import IsolationForest
 from io import BytesIO
@@ -22,7 +22,7 @@ class NOAAGOESFetcher:
             r = session.get(URLs[satellite], timeout=10)
             r.raise_for_status()
             img = Image.open(BytesIO(r.content)).convert('RGB')
-            arr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+            arr = np.array(img)
             return {'success': True, 'image': arr, 'image_pil': img, 'timestamp': datetime.datetime.utcnow(), 'resolution': f'{arr.shape[1]}x{arr.shape[0]}', 'satellite': satellite, 'error': None}
         except requests.exceptions.Timeout: return {**ERROR_RESPONSE, 'error': 'Connection timeout', 'satellite': satellite}
         except requests.exceptions.ConnectionError: return {**ERROR_RESPONSE, 'error': 'Connection failed', 'satellite': satellite}
@@ -32,14 +32,30 @@ class ImageComparator:
     @staticmethod
     def calculate_difference_map(past, present):
         if past is None or present is None: return None
-        diff = cv2.absdiff(past, present)
-        gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        return clahe.apply(gray)
+        if past.shape != present.shape:
+            h = min(past.shape[0], present.shape[0])
+            w = min(past.shape[1], present.shape[1])
+            past = past[:h, :w]
+            present = present[:h, :w]
+
+        diff = np.abs(present.astype(np.int16) - past.astype(np.int16)).astype(np.uint8)
+        if diff.ndim == 3:
+            gray = np.mean(diff, axis=2)
+        else:
+            gray = diff
+        return gray.astype(np.uint8)
 
     @staticmethod
     def generate_heatmap(diff_map):
-        return cv2.applyColorMap(np.uint8(diff_map), cv2.COLORMAP_HOT)
+        if diff_map is None:
+            return None
+        img = Image.fromarray(np.uint8(diff_map), mode='L')
+        heat = Image.fromarray(np.array(img))
+        return np.array(Image.merge('RGB', (
+            heat,
+            Image.eval(heat, lambda x: int(x * 0.4)),
+            Image.eval(heat, lambda x: int(x * 0.1))
+        )))
 
     @staticmethod
     def get_change_percentage(diff_map, threshold=30):
@@ -52,8 +68,10 @@ class AnomalyDetector:
         if diff_map is None:
             return {'has_anomaly': False, 'threshold': 30, 'pixel_count': 0, 'mean_diff': 0.0, 'max_diff': 0.0, 'change_percentage': 0.0}
 
-        resized = cv2.resize(diff_map, (256, 256), interpolation=cv2.INTER_AREA)
-        flat = resized.flatten().astype(np.float32)
+        row_stride = max(1, diff_map.shape[0] // 256)
+        col_stride = max(1, diff_map.shape[1] // 256)
+        reduced = diff_map[::row_stride, ::col_stride]
+        flat = reduced.flatten().astype(np.float32)
 
         max_points = 4096
         if flat.size > max_points:
