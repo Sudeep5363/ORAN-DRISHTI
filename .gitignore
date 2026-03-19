@@ -6,3 +6,25 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.Python
+*.egg-info/
+*.egg
+
+# Python test / generated data
+*.tif
+*.tiff
+!*.tif.example
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Rasterio / GDAL temp files
+*.aux.xml
