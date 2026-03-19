@@ -1,30 +1,74 @@
+// ============================================================
+// App.tsx — Oran-Drishti Main Application (GeoTIFF Mode)
+//
+// This is the primary entry point for the browser-based variant
+// of Oran-Drishti.  Users upload two single-band GeoTIFF rasters
+// (Past and Present NDVI imagery) and the full three-filter
+// pipeline runs entirely client-side — no server or API needed.
+//
+// Data flow:
+//   Upload Past TIF → loadGeoTiff → renderToCanvas (preview)
+//   Upload Present TIF → loadGeoTiff → renderToCanvas (preview)
+//   Click "Run Analysis" →
+//     calculateDrift (Present − Past)
+//     → detectAnomalies (Isolation Forest)
+//     → renderToCanvas (result map with red overlay)
+//     → calculateSunPosition + validateShadowDepth (Surya-Sakshi)
+//   Click pixel on result map → getChartData → NDVI trend mini-chart
+// ============================================================
+
 import React, { useState, useRef, useEffect } from 'react';
-import { loadGeoTiff, calculateDrift, detectAnomalies, renderToCanvas, calculateSunPosition, validateShadowDepth, RasterData } from './utils/geospatialEngine';
+import {
+  loadGeoTiff,
+  calculateDrift,
+  detectAnomalies,
+  renderToCanvas,
+  calculateSunPosition,
+  validateShadowDepth,
+  RasterData
+} from './utils/geospatialEngine';
 import { Upload, Play, AlertTriangle, Download, FileCode, MousePointerClick, Sun } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 function App() {
-  const [pastFile, setPastFile] = useState<File | null>(null);
+  // --- File state (drives UI labels and button enabled state) ---
+  const [pastFile,    setPastFile]    = useState<File | null>(null);
   const [presentFile, setPresentFile] = useState<File | null>(null);
+
+  // --- Processing / result state ---
   const [isProcessing, setIsProcessing] = useState(false);
-  const [resultReady, setResultReady] = useState(false);
+  const [resultReady,  setResultReady]  = useState(false);
+
+  // --- Pixel inspection state (set when user clicks the result canvas) ---
   const [selectedPixel, setSelectedPixel] = useState<{x: number, y: number} | null>(null);
+
+  // --- Surya-Sakshi result (computed after drift analysis) ---
   const [solarData, setSolarData] = useState<{altitude: number, isConfirmed: boolean} | null>(null);
   
-  const canvasPastRef = useRef<HTMLCanvasElement>(null);
+  // Canvas refs — used to imperatively draw raster data
+  const canvasPastRef    = useRef<HTMLCanvasElement>(null);
   const canvasPresentRef = useRef<HTMLCanvasElement>(null);
-  const canvasResultRef = useRef<HTMLCanvasElement>(null);
+  const canvasResultRef  = useRef<HTMLCanvasElement>(null);
 
-  const pastRasterRef = useRef<RasterData | null>(null);
+  // Raster data refs — kept in refs (not state) to avoid re-renders
+  // when large typed arrays are swapped in during file load.
+  const pastRasterRef    = useRef<RasterData | null>(null);
   const presentRasterRef = useRef<RasterData | null>(null);
 
+  // ============================================================
+  // handleFileUpload — Parse and preview an uploaded GeoTIFF
+  // ============================================================
+  // Called by both file inputs (past and present).
+  // Loads the raster into memory and immediately renders a preview.
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'past' | 'present') => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      if (type === 'past') setPastFile(file);
-      else setPresentFile(file);
 
-      // Load and preview immediately
+      // Update file state to reflect the chosen filename in the UI
+      if (type === 'past') setPastFile(file);
+      else                 setPresentFile(file);
+
+      // Parse the GeoTIFF and immediately render a green-scale preview
       try {
         const raster = await loadGeoTiff(file);
         if (type === 'past') {
@@ -41,6 +85,14 @@ function App() {
     }
   };
 
+  // ============================================================
+  // runAnalysis — Execute the three-filter pipeline
+  // ============================================================
+  // Guards against running without both files, then:
+  //   1. Calculates pixel-wise drift (Present − Past)
+  //   2. Runs Isolation Forest to score anomalous drift pixels
+  //   3. Renders the result map with red anomaly overlay
+  //   4. Applies Surya-Sakshi (solar altitude) validation
   const runAnalysis = async () => {
     if (!pastRasterRef.current || !presentRasterRef.current) {
       alert("Please upload both Past and Present GeoTIFF files.");
@@ -51,27 +103,34 @@ function App() {
     setResultReady(false);
     setSolarData(null);
     
-    // Allow UI to update
+    // Defer heavy computation by one event loop tick so React can flush
+    // the "Processing…" UI state before blocking the main thread.
     setTimeout(() => {
       try {
+        // Step 1 — Drift: pixel-wise subtraction
         const drift = calculateDrift(pastRasterRef.current!, presentRasterRef.current!);
+
+        // Step 2 — Anomaly detection: Isolation Forest
         const { anomalies, count, stats } = detectAnomalies(drift);
         
         console.log("Analysis Result:", { count, stats });
 
+        // Step 3 — Render: present-image base with red anomaly overlay
         if (canvasResultRef.current) {
           renderToCanvas(presentRasterRef.current!, canvasResultRef.current, anomalies);
         }
         
-        // Run Surya-Sakshi (Solar Validation)
-        // Simulate date (May 15th) and location (Aravallis)
-        const simDate = new Date('2025-05-15T12:00:00Z');
-        const altitude = calculateSunPosition(24.5, 73.0, simDate);
+        // Step 4 — Surya-Sakshi: solar altitude validation
+        // Use a fixed demo timestamp (May 15 2025, 12:00 UTC) representing
+        // a typical cloud-free Sentinel-2 acquisition over the Aravallis.
+        const simDate     = new Date('2025-05-15T12:00:00Z');
+        const altitude    = calculateSunPosition(24.5, 73.0, simDate);
         const isConfirmed = validateShadowDepth(altitude, stats.maxScore || 0.8);
         setSolarData({ altitude, isConfirmed });
 
         setResultReady(true);
         
+        // Inform the user if the Isolation Forest found nothing to flag
         if (count === 0) {
           alert("No significant anomalies detected. Try adjusting the data or ensuring there is negative drift.");
         }
@@ -82,33 +141,46 @@ function App() {
       } finally {
         setIsProcessing(false);
       }
-    }, 100);
+    }, 100); // 100 ms delay to allow UI flush
   };
 
+  // ============================================================
+  // handleCanvasClick — Select a pixel for NDVI trend inspection
+  // ============================================================
+  // Translates a mouse click on the rendered result canvas to
+  // raster pixel coordinates (accounts for CSS scaling).
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!resultReady || !canvasResultRef.current || !pastRasterRef.current || !presentRasterRef.current) return;
 
     const rect = canvasResultRef.current.getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) * (canvasResultRef.current.width / rect.width));
-    const y = Math.floor((e.clientY - rect.top) * (canvasResultRef.current.height / rect.height));
 
+    // Scale from CSS pixel space → canvas/raster pixel space
+    const x = Math.floor((e.clientX - rect.left)  * (canvasResultRef.current.width  / rect.width));
+    const y = Math.floor((e.clientY - rect.top)    * (canvasResultRef.current.height / rect.height));
+
+    // Clamp to valid raster bounds before saving
     if (x >= 0 && x < pastRasterRef.current.width && y >= 0 && y < pastRasterRef.current.height) {
       setSelectedPixel({ x, y });
     }
   };
 
+  // ============================================================
+  // getChartData — Build a 3-point NDVI trend for a clicked pixel
+  // ============================================================
+  // Since we only have two raster images (Past and Present), we
+  // interpolate a midpoint to create a readable trend line.
   const getChartData = () => {
     if (!selectedPixel || !pastRasterRef.current || !presentRasterRef.current) return [];
     
-    const idx = selectedPixel.y * pastRasterRef.current.width + selectedPixel.x;
-    const pastVal = pastRasterRef.current.data[idx];
+    // Convert 2-D coordinates to a flat array index (row-major order)
+    const idx      = selectedPixel.y * pastRasterRef.current.width + selectedPixel.x;
+    const pastVal  = pastRasterRef.current.data[idx];
     const presentVal = presentRasterRef.current.data[idx];
 
-    // Simulate a time series for the chart since we only have two points
-    // We'll interpolate a simple trend
+    // Three synthetic time points: Past → interpolated midpoint → Present
     return [
-      { name: '2023 (Past)', ndvi: pastVal },
-      { name: '2024 (Inter)', ndvi: (pastVal + presentVal) / 2 }, // Interpolated
+      { name: '2023 (Past)',    ndvi: pastVal },
+      { name: '2024 (Inter)',   ndvi: (pastVal + presentVal) / 2 }, // Linear interpolation
       { name: '2025 (Present)', ndvi: presentVal },
     ];
   };
@@ -116,7 +188,7 @@ function App() {
   return (
     <div className="min-h-screen bg-stone-900 text-stone-100 font-sans p-6">
       
-      {/* Header */}
+      {/* ---- Header ---- */}
       <header className="mb-8 border-b border-stone-700 pb-4 flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-serif font-bold text-emerald-500 tracking-tight flex items-center gap-3">
@@ -124,6 +196,8 @@ function App() {
           </h1>
           <p className="text-stone-400 mt-1">Unsupervised Aravalli Intelligence System (Local Processing Mode)</p>
         </div>
+
+        {/* Quick-download links for the Python source files */}
         <div className="flex gap-4">
            <a 
             href="/oran_drishti_final/app.py" 
@@ -163,18 +237,19 @@ function App() {
         </div>
       </header>
 
-      {/* Main Grid */}
+      {/* ---- Main Two-Column Grid ---- */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
-        {/* Input Section */}
+        {/* ---- Left Column: Input Panel ---- */}
         <div className="space-y-6">
           <div className="bg-stone-800 p-6 rounded-xl border border-stone-700">
             <h2 className="text-xl font-bold text-stone-300 mb-4 flex items-center gap-2">
               <Upload size={20} /> Data Injection
             </h2>
             
+            {/* Side-by-side file inputs with canvas previews */}
             <div className="grid grid-cols-2 gap-4">
-              {/* Past Input */}
+              {/* Past GeoTIFF input */}
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-stone-400">Past GeoTIFF (e.g., 2023)</label>
                 <div className="relative group">
@@ -191,13 +266,14 @@ function App() {
                       cursor-pointer"
                   />
                 </div>
+                {/* Canvas renders the parsed raster immediately after upload */}
                 <div className="aspect-square bg-black rounded-lg overflow-hidden border border-stone-700 relative">
                   <canvas ref={canvasPastRef} className="w-full h-full object-contain" />
                   {!pastFile && <div className="absolute inset-0 flex items-center justify-center text-stone-600">No Image</div>}
                 </div>
               </div>
 
-              {/* Present Input */}
+              {/* Present GeoTIFF input */}
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-stone-400">Present GeoTIFF (e.g., 2025)</label>
                 <div className="relative group">
@@ -221,6 +297,7 @@ function App() {
               </div>
             </div>
 
+            {/* Analysis trigger button — disabled until both files are loaded */}
             <button
               onClick={runAnalysis}
               disabled={!pastFile || !presentFile || isProcessing}
@@ -240,7 +317,7 @@ function App() {
             </button>
           </div>
 
-          {/* Instructions */}
+          {/* Usage instructions panel */}
           <div className="bg-stone-800/50 p-4 rounded-lg border border-stone-700 text-sm text-stone-400">
             <h3 className="font-bold text-stone-300 mb-2">Hackathon Mode Instructions:</h3>
             <ol className="list-decimal list-inside space-y-1">
@@ -252,28 +329,31 @@ function App() {
           </div>
         </div>
 
-        {/* Output Section */}
+        {/* ---- Right Column: Output Panel ---- */}
         <div className="bg-stone-800 p-6 rounded-xl border border-stone-700 flex flex-col space-y-6">
           
-          {/* Map */}
+          {/* Result raster map */}
           <div>
             <h2 className="text-xl font-bold text-stone-300 mb-4 flex items-center gap-2">
               <AlertTriangle size={20} className="text-red-500" /> Adharma Alert: Degradation Map
             </h2>
             
             <div className="bg-black rounded-lg overflow-hidden border border-stone-700 relative min-h-[400px]">
+              {/* canvasResultRef: shows green-scale raster + pulsing red anomaly overlay */}
               <canvas 
                 ref={canvasResultRef} 
                 onClick={handleCanvasClick}
                 className={`w-full h-full object-contain ${resultReady ? 'cursor-crosshair' : ''}`} 
               />
               
+              {/* Placeholder text before the first analysis runs */}
               {!resultReady && !isProcessing && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-stone-600">
                   <p>Waiting for analysis...</p>
                 </div>
               )}
               
+              {/* Legend overlay shown after analysis completes */}
               {resultReady && (
                 <div className="absolute bottom-4 left-4 bg-stone-900/90 p-3 rounded border border-stone-600 pointer-events-none">
                   <div className="flex items-center gap-2 mb-1">
@@ -292,7 +372,7 @@ function App() {
             </div>
           </div>
 
-          {/* Pixel Analysis Chart */}
+          {/* Pixel-level NDVI trend chart — appears when user clicks the result map */}
           {resultReady && selectedPixel && (
             <div className="bg-stone-900/50 p-4 rounded-lg border border-stone-600">
               <h3 className="text-sm font-bold text-stone-300 mb-2 flex items-center gap-2">
@@ -307,6 +387,7 @@ function App() {
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#1c1917', border: '1px solid #44403c', color: '#fff' }}
                     />
+                    {/* Single green line showing NDVI across the three time points */}
                     <Line 
                       type="monotone" 
                       dataKey="ndvi" 
@@ -320,6 +401,7 @@ function App() {
             </div>
           )}
 
+          {/* Summary card shown after analysis completes */}
           {resultReady && (
             <div className="p-4 bg-red-900/20 border border-red-900/50 rounded-lg">
               <h4 className="font-bold text-red-400 mb-1">Analysis Complete</h4>
