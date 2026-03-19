@@ -1,5 +1,40 @@
 {
   "name": "Oran-Drishti: The Sacred Grove Sentinel",
-  "description": "Unsupervised ecological monitoring dashboard detecting illegal land-use drift in sacred groves.",
+  "description": "Unsupervised AI-powered ecological monitoring dashboard detecting illegal land-use drift in sacred groves using satellite imagery, harmonic analysis, and machine learning anomaly detection.",
+  "version": "1.0.0",
+  "author": "Oran-Drishti Contributors",
+  "license": "MIT",
+  "repository": "https://github.com/yourusername/ORAN-DRISHTI",
+  "keywords": [
+    "satellite-imaging",
+    "ecological-monitoring",
+    "machine-learning",
+    "conservation",
+    "geospatial-analysis",
+    "anomaly-detection",
+    "unsupervised-learning",
+    "remote-sensing",
+    "environmental-protection"
+  ],
+  "technologies": {
+    "frontend": ["React 19", "TypeScript", "Vite", "Tailwind CSS", "Leaflet"],
+    "backend": ["Python", "TensorFlow", "Streamlit"],
+    "libraries": ["SunCalc", "FFT.js", "Recharts", "Motion.dev"]
+  },
+  "features": [
+    "Real-time satellite data integration",
+    "Three-stage anomaly detection pipeline",
+    "Interactive mapping dashboard",
+    "Time-series anomaly visualization",
+    "Solar physics validation",
+    "Multi-source satellite data support",
+    "Unsupervised learning algorithms"
+  ],
+  "support": {
+    "documentation": ["README.md", "GETTING_STARTED.md", "ARCHITECTURE.md", "DEPLOYMENT.md"],
+    "contributing": "CONTRIBUTING.md",
+    "license": "LICENSE"
+  },
   "requestFramePermissions": []
 }
+
